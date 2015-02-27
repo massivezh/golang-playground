@@ -1,12 +1,40 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 )
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func splitSegment(size int64, segment_count int64) []string {
+	fmt.Println("Total: ", size)
+	// check length big than cnt
+	segment_size := size / segment_count
+	ranges := make([]string, segment_count)
+	for i := int64(0); i < segment_count-1; i++ {
+		ranges[i] = fmt.Sprintf("bytes=%d-%d", i*segment_size, (i+1)*segment_size-1)
+	}
+	ranges[segment_count-1] = fmt.Sprintf("bytes=%d-%d", segment_size*(segment_count-1), size-1)
+	return ranges
+}
+func getUrlSize(url string) int64 {
+	resp, err := http.Get(url)
+	defer resp.Body.Close()
+
+	check(err)
+
+	return resp.ContentLength
+}
 
 func downloadFromUrl(url string, start int, end int) {
 	tokens := strings.Split(url, "/")
@@ -46,7 +74,44 @@ func downloadFromUrl(url string, start int, end int) {
 	fmt.Println(n, "bytes downloaded.")
 }
 
+// verify file seek opration
+func WritePart(fileName string, ch <-chan int64, data []byte) {
+	offset := <-ch
+	fmt.Println(offset)
+	f, err := os.OpenFile(fileName, os.O_RDWR, 0666)
+	n1, err := f.Seek(offset, 0)
+	check(err)
+
+	nr := bytes.NewReader(data)
+	n2, err := io.Copy(f, nr)
+	check(err)
+	_ = n1
+	_ = n2
+
+	defer f.Close()
+}
 func main() {
 	url := "http://mirrors.sohu.com/centos/2/readme.txt"
-	downloadFromUrl(url, 16, 31)
+	//url_big := "http://mirrors.sohu.com/centos/6.6/isos/x86_64/CentOS-6.6-x86_64-bin-DVD1.iso"
+
+	size := getUrlSize(url_big)
+	chunk_ranges := splitSegment(size, 5)
+	offchan := make(chan string)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			DownloadPart(url, offchan)
+		}()
+
+	}
+	go func() {
+		for _, r_stru := range chunk_ranges {
+			offchan <- &r_stru
+		}
+	}()
+	wg.Wait()
 }
