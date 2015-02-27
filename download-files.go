@@ -10,13 +10,18 @@ import (
 	"sync"
 )
 
+type ChunkInfo struct {
+	fileOffset int64
+	chunkRange string
+}
+
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
 
-func splitSegment(size int64, segment_count int64) []string {
+func caluSegmentRange(size int64, segment_count int64) []string {
 	fmt.Println("Total: ", size)
 	// check length big than cnt
 	segment_size := size / segment_count
@@ -36,7 +41,7 @@ func getUrlSize(url string) int64 {
 	return resp.ContentLength
 }
 
-func downloadFromUrl(url string, start int, end int) {
+func downloadFromUrl(url string, ch <-chan *ChunkInfo) {
 	tokens := strings.Split(url, "/")
 	fileName := tokens[len(tokens)-1]
 	fmt.Println("Downloading", url, "to", fileName)
@@ -96,7 +101,7 @@ func main() {
 
 	size := getUrlSize(url_big)
 	chunk_ranges := splitSegment(size, 5)
-	offchan := make(chan string)
+	ch := make(chan *ChunkInfo)
 
 	var wg sync.WaitGroup
 
